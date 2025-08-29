@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="de">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Gerichte für 5.–</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="/app/assets/app.css" rel="stylesheet">
+</head>
+
+<body>
+  <header class="bg-white border-bottom">
+    <div class="container-narrow d-flex align-items-center gap-2 py-2">
+      <i class="bi bi-basket2-fill fs-4 text-primary"></i>
+      <strong>Gerichte für 5.–</strong>
+      <span id="budget-badge" class="ms-auto badge text-bg-light">CHF 100/Woche</span>
+    </div>
+  </header>
+
+  <main class="container-narrow py-3">
+    <!-- Wochenplan -->
+    <section id="view-plan" class="mb-4">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h5 class="mb-0">Wochenplan</h5>
+        <button id="btn-replan" class="btn btn-sm btn-success">
+          <i class="bi bi-arrow-repeat"></i> Neu planen
+        </button>
+      </div>
+      <div id="recipe-grid" class="recipe-grid"></div>
+    </section>
+
+    <!-- Einkaufsliste -->
+    <section id="view-einkauf">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <h5 class="mb-0">Einkaufsliste</h5>
+        <div class="btn-group">
+          <button class="btn btn-sm btn-outline-secondary active" type="button">Beste Preise</button>
+          <button class="btn btn-sm btn-outline-secondary" type="button">Pro Laden</button>
+        </div>
+      </div>
+
+      <div class="app-card" id="list-box"></div>
+      <div class="d-flex justify-content-between align-items-center mt-3" id="list-summary"></div>
+    </section>
+
+    <section id="view-products" class="mt-4">
+      <h5 class="mb-2">Produkte</h5>
+      <div class="input-group mb-2">
+        <input id="prod-q" type="search" class="form-control form-control-sm" placeholder="Produkt suchen (z.B. Spaghetti)">
+        <button id="prod-search" class="btn btn-sm btn-outline-secondary" type="button"><i
+            class="bi bi-search"></i></button>
+      </div>
+      <div id="prod-results"></div>
+    </section>
+
+  </main>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+
+      // === Helpers ===============================================================
+      function updateBadge(data) {
+        var badge = document.getElementById('budget-badge');
+        if (!badge || typeof data.total === 'undefined') return;
+        badge.textContent = 'CHF ' + Number(data.total).toFixed(2) + ' / ' + Number(data.budget).toFixed(2);
+      }
+
+      function enrichBestPrice(container, list) {
+        if (!container || !Array.isArray(list)) return;
+        list.forEach(function (r) {
+          var q = (r && r.title) ? r.title : '';
+          if (!q) return;
+          fetch('/api/products/search?q=' + encodeURIComponent(q) + '&limit=1')
+            .then(function (res) { return res.json(); })
+            .then(function (arr) {
+              if (!arr || !arr.length) return;
+              var p = arr[0];
+              if (p.best_price == null) return;
+              var badge = container.querySelector('.price-badge[data-rid="' + r.id + '"]');
+              if (!badge) return;
+              badge.textContent = 'CHF ' + Number(r.price_per_portion).toFixed(2) + '/Port. • ab CHF ' + Number(p.best_price).toFixed(2);
+              if (p.best_store) badge.setAttribute('title', 'Beste Option: ' + p.best_store + (p.captured_at ? ' · ' + p.captured_at : ''));
+            })
+            .catch(function () { });
+        });
+      }
+
+      function renderPlanGrid(meals) {
+        var g = document.getElementById('recipe-grid');
+        if (!g || !meals) return;
+        g.innerHTML = meals.map(function (r) {
+          return (
+            '<div class="app-card">' +
+            '<div class="d-flex align-items-start gap-2">' +
+            '<h6 class="mb-1 flex-grow-1">' + r.title + '</h6>' +
+            '<span class="price-badge" data-rid="' + r.id + '">CHF ' + Number(r.price_per_portion).toFixed(2) + '/Port.</span>' +
+            '</div>' +
+            '<p class="text-secondary small mb-2">' + r.time + ' min · ' + r.kcal + ' kcal</p>' +
+            '<div class="mt-auto d-flex gap-2">' +
+            '<a href="#" class="btn btn-sm btn-outline-primary btn-details" data-id="' + r.id + '"><i class="bi bi-eye"></i> Details</a>' +
+            '<button class="btn btn-sm btn-primary btn-swap" data-pm="' + (r.pm_id || '') + '"><i class="bi bi-shuffle"></i> Tauschen</button>' +
+            '</div>' +
+            '</div>'
+          );
+        }).join('');
+        enrichBestPrice(g, meals);
+      }
+
+      // === Produktsuche ==========================================================
+      function searchProducts(q) {
+        q = (q || '').trim();
+        var res = document.getElementById('prod-results');
+        if (!res) return;
+        if (!q) { res.innerHTML = ''; return; }
+
+        fetch('/api/products/search?q=' + encodeURIComponent(q))
+          .then(function (r) { return r.json(); })
+          .then(function (list) {
+            if (!Array.isArray(list) || !list.length) {
+              res.innerHTML = '<div class="app-card">Keine Treffer.</div>'; return;
+            }
+            res.innerHTML = list.map(function (p) {
+              var bp = (p.best_price !== null && p.best_price !== undefined)
+                ? ('<span class="price-badge">ab CHF ' + Number(p.best_price).toFixed(2) + '</span>') : '';
+              var bs = p.best_store ? ('<span class="text-secondary small ms-2">(' + p.best_store + ')</span>') : '';
+              var size = p.size ? (p.size + ' ' + (p.unit || '')) : '';
+              return (
+                '<div class="app-card">' +
+                '<div class="d-flex align-items-start gap-2">' +
+                '<h6 class="mb-1 flex-grow-1">' + p.name + (size ? ' · ' + size : '') + '</h6>' +
+                bp +
+                '</div>' +
+                (bp ? ('<p class="text-secondary small mb-0">Beste Option ' + bs + (p.captured_at ? ' · ' + p.captured_at : '') + '</p>') : '') +
+                '</div>'
+              );
+            }).join('');
+          })
+          .catch(function () { res.innerHTML = '<div class="app-card">Fehler beim Suchen.</div>'; });
+      }
+
+      var btnS = document.getElementById('prod-search');
+      var inpS = document.getElementById('prod-q');
+      if (btnS && inpS) {
+        btnS.addEventListener('click', function () { searchProducts(inpS.value); });
+        inpS.addEventListener('keydown', function (e) { if (e.key === 'Enter') searchProducts(inpS.value); });
+      }
+
+      // === Wochenplan (ohne Plan) ===============================================
+      function renderRecipes() {
+        fetch('/api/recipes')
+          .then(function (r) { return r.json(); })
+          .then(function (list) {
+            var g = document.getElementById('recipe-grid');
+            if (!g) return;
+            g.innerHTML = list.map(function (r) {
+              return (
+                '<div class="app-card">' +
+                '<div class="d-flex align-items-start gap-2">' +
+                '<h6 class="mb-1 flex-grow-1">' + r.title + '</h6>' +
+                '<span class="price-badge" data-rid="' + r.id + '">CHF ' + Number(r.price_per_portion).toFixed(2) + '/Port.</span>' +
+                '</div>' +
+                '<p class="text-secondary small mb-2">' + r.time + ' min · ' + r.kcal + ' kcal</p>' +
+                '<div class="mt-auto d-flex gap-2">' +
+                '<a href="#" class="btn btn-sm btn-outline-primary btn-details" data-id="' + r.id + '"><i class="bi bi-eye"></i> Details</a>' +
+                '<button class="btn btn-sm btn-primary"><i class="bi bi-shuffle"></i> Tauschen</button>' +
+                '</div>' +
+                '</div>'
+              );
+            }).join('');
+            enrichBestPrice(g, list);
+          })
+          .catch(function () {
+            var g = document.getElementById('recipe-grid');
+            if (g) g.innerHTML = '<div class="app-card">Fehler beim Laden.</div>';
+          });
+      }
+
+      // === Einkaufsliste =========================================================
+      function recomputeListSum() {
+        var box = document.getElementById('list-box');
+        var sumEl = document.getElementById('list-summary');
+        if (!box || !sumEl) return;
+        var remaining = 0;
+        Array.prototype.forEach.call(
+          box.querySelectorAll('input[type="checkbox"][data-amt]'),
+          function (cb) {
+            if (!cb.checked) remaining += parseFloat(cb.getAttribute('data-amt') || '0');
+          }
+        );
+        sumEl.innerHTML = '<strong>Summe:</strong>' +
+          '<span class="ms-2 text-success fw-semibold">CHF ' + remaining.toFixed(2) + '</span>';
+      }
+
+      function loadList() {
+        fetch('/api/shopping-lists')
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            var box = document.getElementById('list-box');
+            var sum = document.getElementById('list-summary');
+            if (!box || !sum) return;
+
+            box.innerHTML = d.items.map(function (i) {
+              var amt = Number(i.qty) * Number(i.price);
+              return (
+                '<div class="form-check list-tick mb-2">' +
+                '<input class="form-check-input me-2" type="checkbox" ' +
+                'id="i' + i.id + '" ' +
+                (i.checked ? 'checked' : '') +
+                ' data-id="' + i.id + '" ' +
+                ' data-amt="' + amt.toFixed(2) + '">' +
+                '<label class="form-check-label" for="i' + i.id + '">' +
+                i.qty + '× ' + i.name + ' <span class="text-secondary">· CHF ' + Number(i.price).toFixed(2) + '</span>' +
+                '</label>' +
+                '<span class="badge text-bg-light float-end">' + (i.store || '') + '</span>' +
+                '</div>'
+              );
+            }).join('');
+
+            // Initial: Summe der offenen (unchecked) Items anzeigen
+            recomputeListSum();
+
+            // Events binden: PUT + sofort Summe neu rechnen
+            Array.prototype.forEach.call(
+              box.querySelectorAll('input[type="checkbox"][data-id]'),
+              function (cb) {
+                cb.addEventListener('change', function (e) {
+                  var id = e.target.getAttribute('data-id');
+                  var checked = e.target.checked;
+
+                  // UI sofort aktualisieren
+                  recomputeListSum();
+
+                  // Server informieren (Fehler ignorieren, UI bleibt responsiv)
+                  fetch('/api/shopping-lists/1/items/' + id, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ checked: checked })
+                  }).catch(function () { });
+                });
+              }
+            );
+          })
+          .catch(function () {
+            var box = document.getElementById('list-box');
+            if (box) box.innerHTML = '<div class="app-card">Fehler beim Laden.</div>';
+          });
+      }
+
+      // === Details ===============================================================
+      document.addEventListener('click', function (e) {
+        var btn = e.target.closest('.btn-details');
+        if (!btn) return;
+        e.preventDefault();
+        var id = btn.getAttribute('data-id');
+        fetch('/api/recipes/' + id)
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            alert(
+              d.title + '\n' +
+              d.time + ' min · ' + d.kcal + ' kcal\n' +
+              'CHF ' + Number(d.price_per_portion).toFixed(2) + ' / Port.'
+            );
+          })
+          .catch(function () { });
+      });
+
+      // === Neu planen ============================================================
+      var btnReplan = document.getElementById('btn-replan');
+      if (btnReplan) {
+        btnReplan.addEventListener('click', function () {
+          var budget = 100; // später dynamisch
+          fetch('/api/planner/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ budget: budget })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              window.currentPlanId = data.id || null;
+              if (Array.isArray(data.meals)) renderPlanGrid(data.meals);
+              updateBadge(data);
+            })
+            .catch(function () { });
+        });
+      }
+
+      // === Swap ==================================================================
+      document.addEventListener('click', function (e) {
+        var b = e.target.closest('.btn-swap');
+        if (!b) return;
+        e.preventDefault();
+        var pm = b.getAttribute('data-pm');
+        var pid = window.currentPlanId;
+        if (!pm || !pid) { alert('Bitte zuerst "Neu planen" ausführen.'); return; }
+
+        fetch('/api/plans/' + pid + '/swap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan_meal_id: Number(pm) })
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (Array.isArray(data.meals)) renderPlanGrid(data.meals);
+            updateBadge(data);
+          })
+          .catch(function () { });
+      });
+
+      // === Initial ===============================================================
+      renderRecipes();
+      loadList();
+    });
+  </script>
+
+
+</body>
+
+</html>

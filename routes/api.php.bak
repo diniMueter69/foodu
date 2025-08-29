@@ -1,0 +1,45 @@
+<?php
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
+
+Route::post('/login', function(Request $r){
+    $creds = $r->validate(['email'=>'required|email','password'=>'required']);
+    $user = User::where('email',$creds['email'])->first();
+    abort_unless($user && Hash::check($creds['password'],$user->password), 401);
+    return response()->json(['ok'=>true]);
+});
+Route::middleware('auth:sanctum')->get('/me', fn(Request $r)=>$r->user());
+
+
+Route::get('/health', fn() => response()->json(['ok' => true]));
+
+// Platzhalter-Endpunkte (später DB):
+Route::get('/recipes', function () {
+    return [
+        ['id'=>1,'title'=>'Pasta Aglio e Olio','price_per_portion'=>1.85,'time'=>15,'kcal'=>520],
+        ['id'=>2,'title'=>'Gemüse-Pfanne mit Reis','price_per_portion'=>2.10,'time'=>20,'kcal'=>480],
+    ];
+});
+
+Route::post('/planner/run', function (Request $r) {
+    return [
+        'budget' => (float)($r->input('budget', 100)),
+        'total'  => 41.60,
+        'meals'  => [1,2], // recipe-ids
+        'saving' => 12.40,
+    ];
+});
+
+Route::get('/shopping-lists', function () {
+    return [
+        'strategy'=>'best_price',
+        'sum'=>41.60,
+        'items'=>[
+            ['id'=>1,'name'=>'Spaghetti 500g','qty'=>1,'price'=>1.20,'store'=>'Denner'],
+            ['id'=>2,'name'=>'Knoblauch','qty'=>1,'price'=>0.50,'store'=>'Lidl'],
+        ],
+    ];
+});

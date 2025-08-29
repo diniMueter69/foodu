@@ -1,0 +1,56 @@
+:root {
+    --brand-primary: #1e7b34;
+    --brand-accent: #ffd166;
+    --brand-danger: #e63946;
+    --radius: 12px;
+    --gap: .75rem;
+    --shadow: 0 6px 20px rgba(0, 0, 0, .06);
+    --bs-primary: var(--brand-primary);
+    --bs-body-bg: #f8fafc;
+    --bs-body-color: #1f2937;
+}
+
+html,
+body {
+    height: 100%
+}
+
+.container-narrow {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 1rem
+}
+
+.app-card {
+    background: #fff;
+    border: 1px solid #eef2f7;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1rem
+}
+
+.price-badge {
+    font-weight: 600;
+    border-radius: 999px;
+    padding: .25rem .6rem;
+    background: rgba(30, 123, 52, .1);
+    color: var(--brand-primary)
+}
+
+.recipe-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--gap)
+}
+
+@media (min-width:768px) {
+    .recipe-grid {
+        grid-template-columns: repeat(2, 1fr)
+    }
+}
+
+@media (min-width:1200px) {
+    .recipe-grid {
+        grid-template-columns: repeat(3, 1fr)
+    }
+}
